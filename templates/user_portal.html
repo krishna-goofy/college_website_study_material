@@ -1,0 +1,60 @@
+
+{% extends 'base.html' %}
+
+{% block title %}User Portal{% endblock %}
+
+{% block content %}
+<h1>Available Study Materials</h1>
+
+<!-- Search Form -->
+<form method="POST" action="{{ url_for('user.user_portal') }}">
+    {{ form.hidden_tag() }}
+
+    <div class="search-container">
+        <div class="form-group">
+            <select name="course" id="course" class="form-select">
+                <option value="">Select Course</option>
+                {% for course in courses %}
+                    <option value="{{ course[0] }}">{{ course[0] }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <select name="semester" id="semester" class="form-select">
+                <option value="">Select Semester</option>
+                {% for semester in semesters %}
+                    <option value="{{ semester[0] }}">{{ semester[0] }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <select name="subject" id="subject" class="form-select">
+                <option value="">Select Subject</option>
+                {% for subject in subjects %}
+                    <option value="{{ subject[0] }}">{{ subject[0] }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <button type="submit" class="btn btn-primary">Search</button>
+        </div>
+    </div>
+</form>
+
+
+<!-- Display filtered materials -->
+<div class="material-container">
+    {% for material in materials %}
+        <div class="material-item">
+            <a href="{{ url_for('user.material_detail', material_id=material.id) }}" class="material-link">
+                <h2>{{ material.title }}</h2>
+                <small>Course: {{ material.course }} | Subject: {{ material.subject }} | Semester: {{ material.semester }} | Type: {{ material.material_type }}</small>
+                <p>{{ material.description }}</p>
+            </a>
+        </div>
+        {% if loop.index % 4 == 0 %}
+            </div><div class="material-container">
+        {% endif %}
+    {% endfor %}
+</div>
+{% endblock %}

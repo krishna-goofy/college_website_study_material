@@ -1,0 +1,674 @@
+college_website_study_material/
+├── app.py
+├── db.py           # New file for database initialization
+├── admin/
+│   ├── __init__.py
+│   ├── routes.py
+│   ├── forms.py
+│   └── models.py
+├── user/
+│   ├── __init__.py
+│   └── routes.py
+├── templates/
+│   ├── admin_portal.html
+│   ├── user_portal.html
+│   ├── base.html
+│   ├── home.html
+│   └── material_detail.html
+└── static/
+    ├── uploads/
+    └── styles.css
+
+db.py
+
+from flask_sqlalchemy import SQLAlchemy
+
+db = SQLAlchemy()
+
+app.py
+
+from flask import Flask, render_template
+from db import db  # Make sure this imports your db object
+import os
+from flask_wtf.csrf import CSRFProtect
+
+def create_app():
+    app = Flask(__name__)
+    app.config['SECRET_KEY'] = 'your_secret_key'
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///study_material.db'
+    app.config['UPLOAD_FOLDER'] = os.path.join(app.root_path, 'static/uploads')
+
+    csrf = CSRFProtect(app)  # Add this line to initialize CSRF protection
+
+    if not os.path.exists(app.config['UPLOAD_FOLDER']):
+        os.makedirs(app.config['UPLOAD_FOLDER'])
+
+    db.init_app(app)
+
+    # Import routes here to avoid circular imports
+    from admin.routes import admin_bp
+    from user.routes import user_bp
+    app.register_blueprint(admin_bp, url_prefix='/admin')
+    app.register_blueprint(user_bp, url_prefix='/user')
+
+    @app.route('/')
+    def home():
+        return render_template('home.html')
+
+    return app
+
+
+if __name__ == '__main__':
+    app = create_app()
+    app.run(debug=True)
+
+
+
+admin/models.py
+
+from db import db  # Importing db from db.py
+
+class StudyMaterial(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(200), nullable=False)
+    course = db.Column(db.String(100), nullable=False)
+    subject = db.Column(db.String(100), nullable=False)
+    semester = db.Column(db.String(10), nullable=False)
+    material_type = db.Column(db.String(50), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    file_path = db.Column(db.String(200), nullable=True)
+    youtube_link = db.Column(db.String(200), nullable=True)
+
+
+admin/forms.py
+
+from flask_wtf import FlaskForm
+from wtforms import StringField, FileField, SelectField, TextAreaField, SubmitField
+from wtforms.validators import DataRequired
+from wtforms import FieldList, FormField, MultipleFileField
+
+class YouTubeLinkForm(FlaskForm):
+    youtube_link = StringField('YouTube Link')
+
+class MaterialForm(FlaskForm):
+    title = StringField('Title', validators=[DataRequired()])
+    course = StringField('Course', validators=[DataRequired()])
+    subject = StringField('Subject', validators=[DataRequired()])
+    semester = SelectField('Semester', choices=[('1', '1'), ('2', '2'), ('3', '3'), ('4', '4'), ('5', '5'), ('6', '6')], validators=[DataRequired()])
+    material_type = SelectField('Material Type', choices=[('notes', 'Notes'), ('previous_papers', 'Previous Years Papers'), ('youtube', 'YouTube Playlist')], validators=[DataRequired()])
+    description = TextAreaField('Description')
+    files = MultipleFileField('Upload Files')  # Accept multiple files
+    youtube_links = FieldList(FormField(YouTubeLinkForm), min_entries=1)
+    submit = SubmitField('Upload')
+
+
+
+
+
+admin/routes.py
+
+from flask import Blueprint, render_template, request, redirect, url_for, flash, current_app
+import os
+from .forms import MaterialForm
+from .models import StudyMaterial
+from db import db
+
+admin_bp = Blueprint('admin', __name__)
+
+
+@admin_bp.route('/portal', methods=['GET', 'POST'])
+def admin_portal():
+    form = MaterialForm()
+    if form.validate_on_submit():
+        print("Form is valid!")  # Debugging statement
+        material_name = form.title.data
+        
+        # Create a directory for the material if it doesn't exist
+        material_folder = os.path.join(current_app.config['UPLOAD_FOLDER'], material_name)
+        if not os.path.exists(material_folder):
+            os.makedirs(material_folder)
+
+        # Handle file uploads
+        if form.files.data:
+            print("Files:", form.files.data)  # Check uploaded files
+            for file in form.files.data:
+                if file:
+                    file_path = os.path.join(material_folder, file.filename)
+                    file.save(file_path)
+
+        # Handle YouTube links
+        youtube_links = [link.youtube_link.data for link in form.youtube_links if link.youtube_link.data]
+        
+        new_material = StudyMaterial(
+            title=form.title.data,
+            course=form.course.data,
+            subject=form.subject.data,
+            semester=form.semester.data,
+            material_type=form.material_type.data,
+            description=form.description.data,
+            file_path='; '.join([file.filename for file in form.files.data if file]),
+            youtube_link='; '.join(youtube_links)
+        )
+        
+        db.session.add(new_material)
+        db.session.commit()
+        flash('Study Material uploaded successfully!', 'success')
+        return redirect(url_for('admin.admin_portal'))
+    else:
+        print("Form Errors:", form.errors)  # Debugging statement to check form errors
+
+    return render_template('admin_portal.html', form=form)
+
+user/forms.py
+
+from flask_wtf import FlaskForm
+from wtforms import SelectField, SubmitField
+
+class SearchForm(FlaskForm):
+    course = SelectField('Course')
+    semester = SelectField('Semester')
+    subject = SelectField('Subject')
+    submit = SubmitField('Search')
+
+
+user/routes.py
+
+from flask import Blueprint, render_template, request
+from admin.models import StudyMaterial
+from .forms import SearchForm  # Import the search form
+
+
+user_bp = Blueprint('user', __name__)
+
+@user_bp.route('/portal', methods=['GET', 'POST'])
+def user_portal():
+    form = SearchForm()  # Create an instance of the SearchForm
+    # Fetch distinct values for courses, semesters, and subjects for the dropdowns
+    courses = StudyMaterial.query.with_entities(StudyMaterial.course).distinct().all()
+    semesters = StudyMaterial.query.with_entities(StudyMaterial.semester).distinct().all()
+    subjects = StudyMaterial.query.with_entities(StudyMaterial.subject).distinct().all()
+
+    # Handle the search/filter request
+    selected_course = request.form.get('course')
+    selected_semester = request.form.get('semester')
+    selected_subject = request.form.get('subject')
+
+    # Filter materials based on the selected values
+    materials = StudyMaterial.query
+    if selected_course:
+        materials = materials.filter_by(course=selected_course)
+    if selected_semester:
+        materials = materials.filter_by(semester=selected_semester)
+    if selected_subject:
+        materials = materials.filter_by(subject=selected_subject)
+
+    materials = materials.all()
+    
+    return render_template('user_portal.html', materials=materials, courses=courses, semesters=semesters, subjects=subjects, form=form)
+
+@user_bp.route('/material/<int:material_id>')
+def material_detail(material_id):
+    material = StudyMaterial.query.get_or_404(material_id)
+    print("Material:", material.title, "YouTube Link:", material.youtube_link)  # Debug line
+    return render_template('material_detail.html', material=material)
+
+
+
+templates/base.html
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <title>{% block title %}College Study Material{% endblock %}</title>
+</head>
+<body>
+    <nav>
+        <ul>
+            <li><a href="{{ url_for('home') }}">Home</a></li>
+            <li><a href="{{ url_for('admin.admin_portal') }}">Admin Portal</a></li>
+            <li><a href="{{ url_for('user.user_portal') }}">User Portal</a></li>
+        </ul>
+    </nav>
+    <div class="container">
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                <ul class="flashes">
+                {% for message in messages %}
+                    <li>{{ message }}</li>
+                {% endfor %}
+                </ul>
+            {% endif %}
+        {% endwith %}
+        {% block content %}{% endblock %}
+    </div>
+</body>
+</html>
+
+
+templates/admin_portal.html
+
+<link rel="stylesheet" href="{{ url_for('static', filename='admin_styles.css') }}">
+<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+
+{% extends 'base.html' %}
+
+{% block title %}Admin Portal{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <h1 class="mb-4 text-center">Upload Study Material</h1>
+     <form method="POST" enctype="multipart/form-data" class="border p-4 shadow-sm rounded">
+        {{ form.hidden_tag() }}
+        
+        <div class="form-group">
+            {{ form.title.label(class="form-label") }} 
+            {{ form.title(class="form-control", size=32) }}
+        </div>
+        <div class="form-group">
+            {{ form.course.label(class="form-label") }} 
+            {{ form.course(class="form-control", size=32) }}
+        </div>
+        <div class="form-group">
+            {{ form.subject.label(class="form-label") }} 
+            {{ form.subject(class="form-control", size=32) }}
+        </div>
+        <div class="form-group">
+            {{ form.semester.label(class="form-label") }} 
+            {{ form.semester(class="form-select") }}
+        </div>
+        <div class="form-group">
+            {{ form.material_type.label(class="form-label") }} 
+            {{ form.material_type(class="form-select") }}
+        </div>
+        <div class="form-group">
+            {{ form.description.label(class="form-label") }} 
+            {{ form.description(class="form-control", cols=32, rows=4) }}
+        </div>
+
+        <div class="form-group">
+            {{ form.files.label(class="form-label") }} 
+            {{ form.files(class="form-control", multiple=True) }}
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">YouTube Links</label>
+            <div id="youtubeLinksContainer" class="mb-2">
+                {% for link in form.youtube_links %}
+                    <div class="youtube-link d-flex align-items-center mb-2">
+
+                        {{ link.youtube_link(class="form-control mr-2", size=32) }}
+                        <button type="button" class="removeYoutubeLink btn btn-danger btn-sm">Remove</button>
+                    </div>
+                {% endfor %}
+            </div>
+            <button type="button" id="addYoutubeLink" class="btn btn-secondary">Add Another YouTube Link</button>
+        </div>
+
+        <div class="form-group">
+            {{ form.submit(class="btn btn-primary") }}
+        </div>
+    </form>
+    <div class="mt-3">{{ get_flashed_messages() }}</div>
+</div>
+
+<script>
+let youtubeLinkCount = {{ form.youtube_links|length }};  // Set the initial count based on existing links
+
+document.getElementById('addYoutubeLink').addEventListener('click', function() {
+    var container = document.createElement('div');
+    container.className = 'youtube-link d-flex align-items-center mb-2';
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.name = `youtube_links-${youtubeLinkCount}-youtube_link`;  // Use the counter
+    input.className = 'form-control mr-2';
+    
+    // Create the Remove button
+    var removeButton = document.createElement('button');
+    removeButton.type = 'button';
+    removeButton.className = 'removeYoutubeLink btn btn-danger btn-sm';
+    removeButton.innerText = 'Remove';
+
+    // Add event listener to the Remove button
+    removeButton.addEventListener('click', function() {
+        container.remove();  // Remove the input field
+    });
+
+    container.appendChild(input);
+    container.appendChild(removeButton);
+    document.getElementById('youtubeLinksContainer').appendChild(container);  // Append to the container
+    youtubeLinkCount++;  // Increment the counter
+});
+
+// Add event listeners to existing Remove buttons
+document.querySelectorAll('.removeYoutubeLink').forEach(button => {
+    button.addEventListener('click', function() {
+        button.parentElement.remove();  // Remove the corresponding input field
+    });
+});
+</script>
+
+{% endblock %}
+
+
+
+templates/user_portal.html
+
+
+
+{% extends 'base.html' %}
+
+{% block title %}User Portal{% endblock %}
+
+{% block content %}
+<h1>Available Study Materials</h1>
+
+<!-- Search Form -->
+<form method="POST" action="{{ url_for('user.user_portal') }}">
+    {{ form.hidden_tag() }}
+
+    <div class="search-container">
+        <div class="form-group">
+            <select name="course" id="course" class="form-select">
+                <option value="">Select Course</option>
+                {% for course in courses %}
+                    <option value="{{ course[0] }}">{{ course[0] }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <select name="semester" id="semester" class="form-select">
+                <option value="">Select Semester</option>
+                {% for semester in semesters %}
+                    <option value="{{ semester[0] }}">{{ semester[0] }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <select name="subject" id="subject" class="form-select">
+                <option value="">Select Subject</option>
+                {% for subject in subjects %}
+                    <option value="{{ subject[0] }}">{{ subject[0] }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <button type="submit" class="btn btn-primary">Search</button>
+        </div>
+    </div>
+</form>
+
+
+<!-- Display filtered materials -->
+<div class="material-container">
+    {% for material in materials %}
+        <div class="material-item">
+            <a href="{{ url_for('user.material_detail', material_id=material.id) }}" class="material-link">
+                <h2>{{ material.title }}</h2>
+                <small>Course: {{ material.course }} | Subject: {{ material.subject }} | Semester: {{ material.semester }} | Type: {{ material.material_type }}</small>
+                <p>{{ material.description }}</p>
+            </a>
+        </div>
+        {% if loop.index % 4 == 0 %}
+            </div><div class="material-container">
+        {% endif %}
+    {% endfor %}
+</div>
+{% endblock %}
+
+
+templates/material_detail.html
+
+
+
+{% extends 'base.html' %}
+
+{% block title %}{{ material.title }}{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1>{{ material.title }}</h1>
+    <p>{{ material.description }}</p>
+    <p><strong>Course:</strong> {{ material.course }}</p>
+    <p><strong>Subject:</strong> {{ material.subject }}</p>
+    <p><strong>Semester:</strong> {{ material.semester }}</p>
+    <p><strong>Type:</strong> {{ material.material_type }}</p>
+
+{% if material.file_path %}
+    {% for file in material.file_path.split('; ') %}
+        <a href="{{ url_for('static', filename='uploads/' ~ material.title ~ '/' ~ file) }}" class="btn">Download {{ file }}</a><br><br>
+    {% endfor %}
+{% endif %}
+
+
+
+{% if material.youtube_link %}
+    <h3>YouTube Links</h3>
+    {% for link in material.youtube_link.split('; ') %}
+        <iframe width="100%" height="315" src="https://www.youtube.com/embed/{{ link.split('=')[1] }}" frameborder="0" allowfullscreen></iframe>
+    {% endfor %}
+{% else %}
+    <p>No videos available for this material.</p>
+{% endif %}
+
+    <br><br>
+    <a href="{{ url_for('user.user_portal') }}" class="btn">Back to Materials</a>
+</div>
+{% endblock %}
+
+
+
+
+templates/home.html
+
+
+{% extends 'base.html' %}
+
+{% block title %}Home{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1>Welcome to the College Study Material Portal</h1>
+    <p>Access various study materials through the portal.</p>
+</div>
+{% endblock %}
+
+
+
+static/styles.css
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Arial', sans-serif;
+    margin: 0;
+    padding: 20px;
+    background-color: #f8f9fa; /* Light background */
+    color: #212529;
+}
+
+h1 {
+    color: #007BFF;
+    text-align: center;
+}
+
+nav {
+    background-color: #007BFF;
+    padding: 10px;
+    border-radius: 5px;
+    margin-bottom: 20px;
+}
+
+nav ul {
+    list-style-type: none;
+    padding: 0;
+    display: flex;
+    justify-content: center;
+}
+
+nav ul li {
+    margin-right: 30px;
+}
+
+nav a {
+    color: white;
+    text-decoration: none;
+    font-weight: bold;
+}
+
+nav a:hover {
+    text-decoration: underline;
+}
+
+.container {
+    max-width: 1200px;
+    margin: auto;
+    padding: 20px;
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+}
+
+.flashes {
+    color: red;
+    margin-bottom: 20px;
+}
+
+.material-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+}
+
+.material-item {
+    flex: 1 1 calc(25% - 20px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    padding: 15px;
+    border-radius: 5px;
+    background-color: #ffffff;
+    margin: 10px 0;
+    transition: transform 0.3s, box-shadow 0.3s;
+}
+
+.material-item:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.material-link {
+    text-decoration: none;
+    color: #007BFF;
+}
+
+.material-link:hover {
+    color: #0056b3;
+}
+
+.material-link h2 {
+    margin: 0;
+    font-size: 18px;
+    color: #343a40; /* Darker color for title */
+}
+
+.search-container {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.search-container .form-group {
+    flex: 1;
+}
+
+.form-select {
+    width: 100%;
+    padding: 10px;
+    border-radius: 5px;
+    border: 1px solid #ced4da;
+    transition: border-color 0.3s;
+}
+
+.form-select:focus {
+    border-color: #80bdff;
+    outline: none;
+}
+
+.btn-primary {
+    padding: 10px 20px;
+    background-color: #007BFF;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+.btn-primary:hover {
+    background-color: #0056b3;
+}
+
+/* Add media queries for responsiveness */
+@media (max-width: 768px) {
+    .material-item {
+        flex: 1 1 calc(50% - 20px); /* Adjust item size on smaller screens */
+    }
+}
+
+
+static/admin_style.css
+
+.container {
+    max-width: 800px; /* Limit the width of the container */
+    margin: auto; /* Center the container */
+    padding: 20px;
+    background-color: #ffffff; /* White background for the form */
+    border-radius: 8px; /* Rounded corners */
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1); /* Subtle shadow */
+}
+
+h1 {
+    color: #007BFF; /* Header color */
+    text-align: center; /* Center the header */
+    margin-bottom: 20px; /* Space below the header */
+}
+
+.form-group {
+    margin-bottom: 15px; /* Space between form groups */
+}
+
+.form-label {
+    display: block; /* Block display for labels */
+    font-weight: bold; /* Bold labels */
+    margin-bottom: 5px; /* Space below labels */
+}
+
+.form-control, .form-select {
+    width: 100%; /* Full width for inputs */
+    padding: 10px; /* Padding for inputs */
+    border: 1px solid #ddd; /* Light border */
+    border-radius: 5px; /* Rounded corners */
+    transition: border-color 0.3s; /* Smooth transition */
+}
+
+.form-control:focus, .form-select:focus {
+    border-color: #007BFF; /* Change border color on focus */
+    outline: none; /* Remove default outline */
+}
+
+.btn {
+    background-color: #007BFF; /* Button background */
+    color: white; /* Button text color */
+    padding: 10px 15px; /* Padding for the button */
+    border: none; /* Remove border */
+    border-radius: 5px; /* Rounded corners */
+    cursor: pointer; /* Pointer cursor */
+    transition: background-color 0.3s; /* Smooth transition */
+}
+
+.btn:hover {
+    background-color: #0056b3; /* Darker shade on hover */
+}

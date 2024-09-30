@@ -1,0 +1,111 @@
+<link rel="stylesheet" href="{{ url_for('static', filename='admin_styles.css') }}">
+<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+
+{% extends 'base.html' %}
+
+{% block title %}Admin Portal{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <h1 class="mb-4 text-center">Upload Study Material</h1>
+     <form method="POST" enctype="multipart/form-data" class="border p-4 shadow-sm rounded">
+        {{ form.hidden_tag() }}
+        
+        <div class="form-group">
+            {{ form.title.label(class="form-label") }} 
+            {{ form.title(class="form-control", size=32) }}
+        </div>
+        <div class="form-group">
+            {{ form.course.label(class="form-label") }} 
+            {{ form.course(class="form-control", size=32) }}
+        </div>
+        <div class="form-group">
+            {{ form.subject.label(class="form-label") }} 
+            {{ form.subject(class="form-control", size=32) }}
+        </div>
+        <div class="form-group">
+            {{ form.semester.label(class="form-label") }} 
+            {{ form.semester(class="form-select") }}
+        </div>
+        <div class="form-group">
+            {{ form.description.label(class="form-label") }} 
+            {{ form.description(class="form-control", cols=32, rows=4) }}
+        </div>
+
+<div class="form-group">
+    {{ form.material_type.label(class="form-label") }}
+    <div class="checkbox-group">
+        {% for subfield in form.material_type %}
+            <div class="form-check">
+                {{ subfield(class="form-check-input") }}
+                <label class="form-check-label">{{ subfield.label.text }}</label>
+            </div>
+        {% endfor %}
+    </div>
+</div>
+
+
+
+        <div class="form-group">
+            {{ form.files.label(class="form-label") }} 
+            {{ form.files(class="form-control", multiple=True) }}
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">YouTube Links</label>
+            <div id="youtubeLinksContainer" class="mb-2">
+                {% for link in form.youtube_links %}
+                    <div class="youtube-link d-flex align-items-center mb-2">
+
+                        {{ link.youtube_link(class="form-control mr-2", size=32) }}
+                        <button type="button" class="removeYoutubeLink btn btn-danger btn-sm">Remove</button>
+                    </div>
+                {% endfor %}
+            </div>
+            <button type="button" id="addYoutubeLink" class="btn btn-secondary">Add Another YouTube Link</button>
+        </div>
+
+        <div class="form-group">
+            {{ form.submit(class="btn btn-primary") }}
+        </div>
+    </form>
+    <div class="mt-3">{{ get_flashed_messages() }}</div>
+</div>
+
+<script>
+let youtubeLinkCount = {{ form.youtube_links|length }};  // Set the initial count based on existing links
+
+document.getElementById('addYoutubeLink').addEventListener('click', function() {
+    var container = document.createElement('div');
+    container.className = 'youtube-link d-flex align-items-center mb-2';
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.name = `youtube_links-${youtubeLinkCount}-youtube_link`;  // Use the counter
+    input.className = 'form-control mr-2';
+    
+    // Create the Remove button
+    var removeButton = document.createElement('button');
+    removeButton.type = 'button';
+    removeButton.className = 'removeYoutubeLink btn btn-danger btn-sm';
+    removeButton.innerText = 'Remove';
+
+    // Add event listener to the Remove button
+    removeButton.addEventListener('click', function() {
+        container.remove();  // Remove the input field
+    });
+
+    container.appendChild(input);
+    container.appendChild(removeButton);
+    document.getElementById('youtubeLinksContainer').appendChild(container);  // Append to the container
+    youtubeLinkCount++;  // Increment the counter
+});
+
+// Add event listeners to existing Remove buttons
+document.querySelectorAll('.removeYoutubeLink').forEach(button => {
+    button.addEventListener('click', function() {
+        button.parentElement.remove();  // Remove the corresponding input field
+    });
+});
+</script>
+
+{% endblock %}

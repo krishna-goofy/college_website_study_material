@@ -1,0 +1,36 @@
+
+
+{% extends 'base.html' %}
+
+{% block title %}{{ material.title }}{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1>{{ material.title }}</h1>
+    <p>{{ material.description }}</p>
+    <p><strong>Course:</strong> {{ material.course }}</p>
+    <p><strong>Subject:</strong> {{ material.subject }}</p>
+    <p><strong>Semester:</strong> {{ material.semester }}</p>
+
+
+{% if material.file_path %}
+    {% for file in material.file_path.split('; ') %}
+        <a href="{{ url_for('static', filename='uploads/' ~ material.title ~ '/' ~ file) }}" class="btn">Download {{ file }}</a><br><br>
+    {% endfor %}
+{% endif %}
+
+
+
+{% if material.youtube_link %}
+    <h3>YouTube Links</h3>
+    {% for link in material.youtube_link.split('; ') %}
+        <iframe width="100%" height="315" src="https://www.youtube.com/embed/{{ link.split('=')[1] }}" frameborder="0" allowfullscreen></iframe>
+    {% endfor %}
+{% else %}
+    <p>No videos available for this material.</p>
+{% endif %}
+
+    <br><br>
+    <a href="{{ url_for('user.user_portal') }}" class="btn">Back to Materials</a>
+</div>
+{% endblock %}
